@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Link Tree Saya</title>
+  <!-- Tailwind CSS untuk Styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-tr from-slate-950 via-indigo-950 to-slate-900 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans">
+
+  <div class="max-w-md w-full text-center space-y-6">
+    <!-- Profil -->
+    <div class="flex flex-col items-center">
+      <div id="avatar-wrap" class="w-28 h-28 rounded-full ring-4 ring-indigo-500/50 shadow-2xl shadow-indigo-500/30 mb-4 overflow-hidden bg-indigo-900/40 flex items-center justify-center text-4xl font-bold text-white/90 hover:scale-105 transition-transform duration-300">
+        <img id="avatar-img" src="https://via.placeholder.com/150" alt="Avatar" class="w-full h-full object-cover hidden">
+        <span id="avatar-text">A</span>
+      </div>
+      <h1 id="name" class="text-2xl font-bold tracking-tight text-white/90">Memuat Nama...</h1>
+      <p id="bio" class="text-indigo-200/70 text-sm mt-1 max-w-xs">Memuat deskripsi...</p>
+    </div>
+
+    <!-- Container Link -->
+    <div id="links-container" class="space-y-3.5"></div>
+    <div id="message" class="text-sm text-indigo-200/60 mt-2"></div>
+    <pre id="debug-json" class="text-xs text-left text-indigo-200/60 mt-3 max-w-full overflow-auto hidden" style="white-space:pre-wrap;word-break:break-word;"></pre>
+  </div>
+
+  <script>
+    // ========================================================
+    // GANTI TULISAN DI BAWAH DENGAN SPREADSHEET ID KAMU
+    // ========================================================
+    const SPREADSHEET_ID = "1_glfL0N9CAiqMF6sbETqKA7UGt_QqWtJynpVQG_iu6Y";
+
+    // Helper menampilkan pesan status/error ke UI
+    function showMessage(text, isError = false) {
+      const el = document.getElementById('message');
+      el.textContent = text || '';
+      el.classList.toggle('text-red-400', isError);
+    }
+
+    function getValue(item, keys, fallback = '') {
+      for (const key of keys) {
+        const value = item?.[key];
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          return String(value).trim();
+        }
+      }
+      return fallback;
+    }
+
+    function isTruthy(value) {
+      if (value === undefined || value === null) return false;
+      const normalized = String(value).trim().toLowerCase();
+      return ['yes', 'y', 'true', '1', 'on', 'aktif', 'active'].includes(normalized);
+    }
+
+    function looksLikeUrl(value) {
+      if (!value) return false;
+      return /^https?:\/\//i.test(String(value).trim());
+    }
+
+    async function fetchGoogleSheet(sheetName) {
+      const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Response not OK: ' + res.status + ' ' + res.statusText);
+
+      const text = await res.text();
+      const match = text.match(/google\.visualization\.Query\.setResponse\((.*)\);?$/s);
+      if (!match) throw new Error('Format respons spreadsheet tidak dikenali.');
+
+      const payload = JSON.parse(match[1]);
+      const rows = payload?.table?.rows || [];
+      if (rows.length === 0) return [];
+
+      const headerRow = rows[0]?.c || [];
+      const headers = headerRow.map(cell => String(cell?.v ?? '').trim());
+
+      return rows.slice(1).map(row => {
+        const record = {};
+        const cells = row?.c || [];
+        headers.forEach((header, index) => {
+          if (!header) return;
+          const value = cells[index]?.v;
+          if (value !== undefined && value !== null && String(value).trim() !== '') {
+            record[header] = String(value).trim();
+          }
+        });
+        return record;
+      }).filter(record => Object.keys(record).length > 0);
+    }
+
+    // Fungsi Mengambil Data Link
+    async function fetchLinks() {
+      try {
+        const links = await fetchGoogleSheet('Links');
+
+        console.log('Fetched Links:', links);
+        // tampilkan debug JSON (non-aktif secara default)
+        const dbg = document.getElementById('debug-json');
+        dbg.textContent = JSON.stringify({profile: null, links}, null, 2);
+
+        if (!Array.isArray(links) || links.length === 0) {
+          showMessage('Tidak ada data link. Periksa nama sheet atau izin akses spreadsheet.', true);
+        } else {
+          showMessage('');
+        }
+
+        const container = document.getElementById('links-container');
+        container.innerHTML = '';
+
+        links.forEach(item => {
+          const activeValue = getValue(item, ['Active', 'active', 'Aktif', 'aktif', 'Status', 'status'], 'yes');
+          const isActive = isTruthy(activeValue);
+
+          if (isActive) {
+            const title = getValue(item, ['Title', 'title', 'Nama', 'nama', 'Label', 'label'], 'Untitled');
+            const url = getValue(item, ['URL', 'Url', 'url', 'Link', 'link', 'Href', 'href']);
+            const icon = getValue(item, ['Icon', 'icon', 'Emoji', 'emoji']);
+
+            const btn = document.createElement('a');
+            btn.href = url || '#';
+            btn.target = "_blank";
+            btn.rel = "noopener noreferrer";
+            if (!url) {
+              btn.removeAttribute('target');
+              btn.style.pointerEvents = 'none';
+              btn.style.opacity = '0.6';
+            }
+            btn.className = "block w-full py-3.5 px-5 bg-slate-800 hover:bg-indigo-600 text-slate-100 hover:text-white font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-indigo-500/25 border border-slate-700/60 hover:border-indigo-500 flex items-center justify-center space-x-2";
+            
+            const iconHtml = icon ? `<span class="text-lg">${icon}</span>` : '';
+            btn.innerHTML = `${iconHtml} <span>${title}</span>`;
+
+            container.appendChild(btn);
+          }
+        });
+      } catch (err) {
+        console.error("Gagal memuat link:", err);
+        showMessage('Gagal memuat link: ' + err.message + '. Buka DevTools -> Network/Console untuk detail.', true);
+      }
+    }
+
+    // Fungsi Mengambil Data Profil
+    async function fetchProfile() {
+      try {
+        const profile = await fetchGoogleSheet('Profile');
+        console.log('Fetched Profile:', profile);
+
+        // update debug panel (gabungkan jika links sudah ada)
+        try {
+          const dbg = document.getElementById('debug-json');
+          const cur = dbg.textContent ? JSON.parse(dbg.textContent) : {};
+          dbg.textContent = JSON.stringify(Object.assign({}, cur, {profile}), null, 2);
+        } catch (e) {
+          // ignore parse errors
+        }
+
+        if (profile && profile.length > 0) {
+          const data = profile[0];
+          if (data.Name) document.getElementById('name').textContent = data.Name;
+          if (data.Bio) document.getElementById('bio').textContent = data.Bio;
+
+          const avatarValue = getValue(data, ['Avatar', 'avatar', 'Foto', 'foto', 'Image', 'image']);
+          const avatarImg = document.getElementById('avatar-img');
+          const avatarText = document.getElementById('avatar-text');
+
+          if (looksLikeUrl(avatarValue)) {
+            avatarImg.src = avatarValue;
+            avatarImg.classList.remove('hidden');
+            avatarText.classList.add('hidden');
+          } else if (avatarValue) {
+            avatarText.textContent = avatarValue;
+            avatarImg.classList.add('hidden');
+            avatarText.classList.remove('hidden');
+          }
+
+          showMessage('');
+        } else {
+          showMessage('Tidak ada data profil. Periksa sheet `Profile` dan header (Name, Bio, Avatar).', true);
+        }
+      } catch (err) {
+        console.error("Gagal memuat profil:", err);
+        showMessage('Gagal memuat profil: ' + err.message + '. Periksa izin spreadsheet atau nama sheet.', true);
+      }
+    }
+
+    // Mulai pemuatan dan tampilkan status
+    showMessage('Memuat data...');
+    fetchProfile();
+    fetchLinks();
+  </script>
+</body>
+</html>
